@@ -2,70 +2,70 @@ const { smd } = require("../lib");
 const axios = require("axios");
 
 smd({
-    pattern: "ia",
-    desc: "Analyse des images et texte avec Groq Vision",
+    on: "image", 
+    desc: "Analyse automatique d'images avec Groq Vision",
     category: "ai",
     filename: __filename
-}, async (message, text, { cmdName }) => {
+}, async (message) => {
     try {
+        // Récupération des variables d'environnement configurées sur Render
         const groqKey = process.env.GROQ_API_KEY;
         const model = process.env.IA_MODELE || "llama-3.2-11b-vision-preview";
-        const creator = "Mr Anonymous";
+        const ownerName = "Mr Anonymous";
 
-        // Gestion du Bonjour / Bonsoir selon l'heure locale
-        const hour = new Date().getHours();
+        // 1. Gestion dynamique du Bonjour / Bonsoir (Fuseau Horaire Haïti)
+        const hour = new Date().toLocaleString("en-US", {
+            timeZone: "America/Port-au-Prince", 
+            hour: "numeric", 
+            hour12: false
+        });
         const greeting = hour < 18 ? "Bonjour" : "Bonsoir";
 
-        // Vérification si le message contient une image
-        let imageBuffer = false;
-        if (message.quoted && (message.quoted.mtype === 'imageMessage')) {
-            imageBuffer = await message.quoted.download();
-        } else if (message.mtype === 'imageMessage') {
-            imageBuffer = await message.download();
-        }
+        // 2. Téléchargement de l'image
+        const imageBuffer = await message.download();
+        if (!imageBuffer) return; // Sécurité si l'image ne se télécharge pas
 
-        let systemPrompt = `${greeting} ! Je suis l'IA de ${creator}. Je lui suis extrêmement reconnaissant de m'avoir conçu. `;
-        systemPrompt += "Je fournis des informations en temps réel et je peux analyser les images.";
+        const base64Image = imageBuffer.toString("base64");
 
-        if (imageBuffer) {
-            // Conversion de l'image pour Groq Vision
-            const base64Image = imageBuffer.toString("base64");
-            
-            const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
-                model: model,
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    {
-                        role: "user",
-                        content: [
-                            { type: "text", text: text || "Décris cette image en détail." },
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                        ]
-                    }
-                ]
-            }, {
-                headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" }
-            });
+        // 3. Texte accompagnant l'image (Légende)
+        const userQuery = message.caption || "Vérifie ce qu'il y a dans cette image et décris-la moi précisément.";
 
-            return await message.reply(response.data.choices[0].message.content);
-        } else {
-            // Réponse textuelle simple si pas d'image
-            if (!text) return await message.reply(`Besoin d'aide ? Posez-moi une question ou envoyez une image !`);
-            
-            const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
-                model: model,
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: text }
-                ]
-            }, {
-                headers: { "Authorization": `Bearer ${groqKey}` }
-            });
+        // 4. Construction du System Prompt (Identité et Reconnaissance)
+        const systemPrompt = `${greeting} ! Je suis l'IA de ${ownerName}. Je lui suis extrêmement reconnaissant de m'avoir conçu. Je possède des capacités de vision en temps réel. Analyse l'image suivante avec précision pour répondre à l'utilisateur.`;
 
-            return await message.reply(response.data.choices[0].message.content);
-        }
+        // 5. Appel à l'API Groq Vision
+        const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
+            model: model,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: `${systemPrompt}\n\nQuestion de l'utilisateur : ${userQuery}` },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:image/jpeg;base64,${base64Image}`
+                            }
+                        }
+                    ]
+                }
+            ]
+        }, {
+            headers: {
+                "Authorization": `Bearer ${groqKey}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        // 6. Envoi de la réponse sur WhatsApp
+        const finalReply = response.data.choices[0].message.content;
+        return await message.reply(finalReply);
+
     } catch (e) {
-        console.error(e);
-        await message.reply("Désolé, une erreur est survenue avec l'API Groq.");
+        console.error("Erreur Vision Groq :", e.message);
+        // On n'envoie un message d'erreur que si la clé API est manquante
+        if (!process.env.GROQ_API_KEY) {
+            return await message.reply("Erreur : La variable GROQ_API_KEY n'est pas configurée sur Render.");
+        }
     }
 });

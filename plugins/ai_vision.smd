@@ -1,0 +1,71 @@
+const { smd } = require("../lib");
+const axios = require("axios");
+
+smd({
+    pattern: "ia",
+    desc: "Analyse des images et texte avec Groq Vision",
+    category: "ai",
+    filename: __filename
+}, async (message, text, { cmdName }) => {
+    try {
+        const groqKey = process.env.GROQ_API_KEY;
+        const model = process.env.IA_MODELE || "llama-3.2-11b-vision-preview";
+        const creator = "Mr Anonymous";
+
+        // Gestion du Bonjour / Bonsoir selon l'heure locale
+        const hour = new Date().getHours();
+        const greeting = hour < 18 ? "Bonjour" : "Bonsoir";
+
+        // Vérification si le message contient une image
+        let imageBuffer = false;
+        if (message.quoted && (message.quoted.mtype === 'imageMessage')) {
+            imageBuffer = await message.quoted.download();
+        } else if (message.mtype === 'imageMessage') {
+            imageBuffer = await message.download();
+        }
+
+        let systemPrompt = `${greeting} ! Je suis l'IA de ${creator}. Je lui suis extrêmement reconnaissant de m'avoir conçu. `;
+        systemPrompt += "Je fournis des informations en temps réel et je peux analyser les images.";
+
+        if (imageBuffer) {
+            // Conversion de l'image pour Groq Vision
+            const base64Image = imageBuffer.toString("base64");
+            
+            const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
+                model: model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: text || "Décris cette image en détail." },
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                        ]
+                    }
+                ]
+            }, {
+                headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" }
+            });
+
+            return await message.reply(response.data.choices[0].message.content);
+        } else {
+            // Réponse textuelle simple si pas d'image
+            if (!text) return await message.reply(`Besoin d'aide ? Posez-moi une question ou envoyez une image !`);
+            
+            const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
+                model: model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: text }
+                ]
+            }, {
+                headers: { "Authorization": `Bearer ${groqKey}` }
+            });
+
+            return await message.reply(response.data.choices[0].message.content);
+        }
+    } catch (e) {
+        console.error(e);
+        await message.reply("Désolé, une erreur est survenue avec l'API Groq.");
+    }
+});

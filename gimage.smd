@@ -1,0 +1,27 @@
+const { smd } = require("../lib");
+const axios = require("axios");
+
+smd({
+    pattern: "génère l'image",
+    alias: ["dessine", "image", "trace"],
+    desc: "Génère une image via IA sans avoir besoin de mettre un point (.) avant",
+    category: "ai",
+    usePrefix: false, // Permet de lancer la commande sans le point (.)
+    filename: __filename
+}, async (message, text) => {
+    // Si l'utilisateur dit juste "génère l'image" sans description
+    if (!text) return await message.reply("Mr Anonymous, que dois-je dessiner ? (Exemple: génère l'image d'un lion en armure)");
+
+    try {
+        await message.reply("🎨 *Anonymous AI prépare votre dessin...*");
+        
+        // Utilisation de l'API Pollinations (Gratuite et rapide)
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?width=1024&height=1024&nologo=true`;
+        
+        // Envoi direct de l'image sur WhatsApp
+        await message.bot.sendFromUrl(message.jid, imageUrl, `✨ Voici votre image pour : *${text}*\n\nPropulsé par Anonymous AI & Groq.`, message);
+    } catch (e) {
+        console.error(e);
+        await message.reply("Désolé, une erreur est survenue lors de la création de l'image.");
+    }
+});
